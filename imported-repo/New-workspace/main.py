@@ -17813,8 +17813,24 @@ async def tower_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # ══════════════════════════════════════════════════════════════════════════
 
 PUMP_MODES = {
-    "medium": {"label": "Medium", "balloon": "🔵", "max_multiplier": 300.0, "growth": 1.12, "edge": 0.96},
-    "hard": {"label": "Hard", "balloon": "🔴", "max_multiplier": 1000.0, "growth": 1.14, "edge": 0.93},
+    "medium": {
+        "label": "Medium",
+        "balloon": "🔵",
+        "max_multiplier": 300.0,
+        "growth": 1.12,
+        "edge": 0.96,
+        "early_burst_probability": 0.55,
+        "image_color": (18, 105, 243),
+    },
+    "hard": {
+        "label": "Hard",
+        "balloon": "🟣",
+        "max_multiplier": 1000.0,
+        "growth": 1.14,
+        "edge": 0.93,
+        "early_burst_probability": 0.75,
+        "image_color": (139, 92, 246),
+    },
 }
 PUMP_QUICK_BETS = (2.0, 5.0, 10.0, 20.0, 40.0)
 _pump_action_in_progress = set()
@@ -17910,13 +17926,13 @@ async def _pump_show_bet_picker(query, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def _pump_setup_markup(user_id: str, difficulty: str | None) -> InlineKeyboardMarkup:
     medium_label = f"🔵 Medium {'✅' if difficulty == 'medium' else ''}".strip()
-    hard_label = f"🔴 Hard {'✅' if difficulty == 'hard' else ''}".strip()
+    hard_label = f"🟣 Hard {'✅' if difficulty == 'hard' else ''}".strip()
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(medium_label, callback_data=f"pump_mode:{user_id}:medium"),
-            InlineKeyboardButton(hard_label, callback_data=f"pump_mode:{user_id}:hard"),
+            primary_btn(medium_label, callback_data=f"pump_mode:{user_id}:medium"),
+            primary_btn(hard_label, callback_data=f"pump_mode:{user_id}:hard"),
         ],
-        [InlineKeyboardButton("🎈 Start Pump", callback_data=f"pump_start:{user_id}")],
+        [primary_btn("🎈 Start Pump", callback_data=f"pump_start:{user_id}")],
         [
             InlineKeyboardButton("✏️ Change Bet", callback_data=f"pump_change_bet:{user_id}"),
             InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu"),
@@ -17931,7 +17947,8 @@ def _pump_setup_text(bet_amount: float, currency: str, difficulty: str | None) -
         f"Bet: <b>{format_balance_in_currency(bet_amount, currency)}</b>\n"
         f"Level: <b>{selected}</b>\n\n"
         "🔵 <b>Medium</b> — blue balloon, up to <b>300x</b>\n"
-        "🔴 <b>Hard</b> — red balloon, up to <b>1000x</b>\n\n"
+        "🟣 <b>Hard</b> — purple balloon, up to <b>1000x</b>\n\n"
+        "Medium has a 55% early-burst chance; Hard has a 75% early-burst chance.\n"
         "Choose a level, then tap <b>Start Pump</b>."
     )
 
@@ -17972,11 +17989,106 @@ def _pump_multiplier(mode: str, pumps: int) -> float:
 
 
 def _pump_generate_burst_point(mode: str) -> float:
-    """Generate the round's burst threshold once, with a capped RTP-friendly draw."""
+    """Generate the round's burst threshold once, without using the bet amount."""
     config = _pump_mode(mode)
+    # The requested difficulty odds apply to the chance of bursting before
+    # the player gets beyond 1.4x. The individual threshold remains random.
+    if random.random() < config["early_burst_probability"]:
+        return round(random.uniform(1.01, 1.39), 2)
     random_value = random.random()
-    point = config["edge"] / max(0.000001, 1.0 - random_value)
+    point = 1.4 + config["edge"] / max(0.000001, 1.0 - random_value)
     return round(min(config["max_multiplier"], max(1.0, point)), 2)
+
+
+def _pump_render_balloon(game: dict, burst: bool = False) -> BytesIO:
+    """Create the compact balloon/pump artwork used by the Telegram game screen."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    width, height = 820, 620
+    background = (12, 34, 48)
+    config = _pump_mode(game["difficulty"])
+    balloon_color = config["image_color"]
+    image = Image.new("RGB", (width, height), background)
+    draw = ImageDraw.Draw(image)
+
+    def font(size: int):
+        for path in (
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        ):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                pass
+        return ImageFont.load_default()
+
+    multiplier = float(game.get("multiplier", 1.0))
+    pumps = int(game.get("pumps", 0))
+    radius = int(142 + min(54, pumps * 4))
+    center_x = width // 2
+    center_y = 220 - min(35, pumps * 2)
+    if burst:
+        balloon_color = (218, 55, 86)
+        radius = max(120, radius - 12)
+
+    # Balloon body, highlight, knot, and string.
+    draw.ellipse(
+        (center_x - radius, center_y - radius, center_x + radius, center_y + radius),
+        fill=balloon_color,
+    )
+    draw.ellipse(
+        (
+            center_x - int(radius * 0.63),
+            center_y - int(radius * 0.72),
+            center_x - int(radius * 0.38),
+            center_y - int(radius * 0.48),
+        ),
+        fill=(235, 247, 255),
+    )
+    knot_y = center_y + radius - 2
+    draw.polygon(
+        [(center_x - 18, knot_y - 4), (center_x + 18, knot_y - 4), (center_x, knot_y + 30)],
+        fill=balloon_color,
+    )
+    draw.rectangle((center_x - 10, knot_y + 25, center_x + 10, knot_y + 53), fill=balloon_color)
+    draw.line((center_x, knot_y + 53, center_x, 475), fill=(35, 55, 69), width=12)
+
+    # Pump base and the row of progress lights from the reference image.
+    draw.rounded_rectangle((center_x - 120, 450, center_x + 120, 525), radius=18, fill=(31, 52, 66))
+    draw.rounded_rectangle((90, 480, center_x - 75, 548), radius=30, fill=(31, 52, 66))
+    draw.rounded_rectangle((center_x - 75, 505, center_x + 75, 550), radius=12, fill=(31, 52, 66))
+    draw.line((90, 550, width - 90, 550), fill=(31, 52, 66), width=18)
+    light_color = balloon_color if not burst else (218, 55, 86)
+    for index in range(4):
+        x = 205 + index * 34
+        draw.ellipse((x - 6, 516, x + 6, 528), fill=light_color if index <= pumps % 4 else (8, 28, 42))
+
+    if burst:
+        crack = (255, 224, 232)
+        draw.line((center_x - 65, center_y - 50, center_x - 20, center_y - 5, center_x - 52, center_y + 48), fill=crack, width=6)
+        draw.line((center_x + 65, center_y - 20, center_x + 20, center_y + 12, center_x + 55, center_y + 70), fill=crack, width=6)
+        display = "BURST!"
+    else:
+        display = f"{multiplier:.2f}x"
+    display_font = font(58 if len(display) < 7 else 48)
+    bbox = draw.textbbox((0, 0), display, font=display_font)
+    draw.text(
+        (center_x - (bbox[2] - bbox[0]) / 2, center_y - (bbox[3] - bbox[1]) / 2),
+        display,
+        fill=(255, 255, 255),
+        font=display_font,
+    )
+
+    title = f"{config['label'].upper()}  •  PUMPS: {pumps}"
+    title_font = font(24)
+    title_box = draw.textbbox((0, 0), title, font=title_font)
+    draw.text(((width - (title_box[2] - title_box[0])) / 2, 28), title, fill=(205, 222, 235), font=title_font)
+
+    output = BytesIO()
+    output.name = "pump.png"
+    image.save(output, format="PNG")
+    output.seek(0)
+    return output
 
 
 def _pump_game_markup(user_id: str, game: dict, currency: str) -> InlineKeyboardMarkup:
@@ -17990,7 +18102,7 @@ def _pump_game_markup(user_id: str, game: dict, currency: str) -> InlineKeyboard
             f"💰 Cash Out {format_balance_in_currency(payout, currency)} ({current:.2f}x)",
             callback_data=f"pump_cashout:{user_id}",
         )])
-    rows.append([InlineKeyboardButton(
+    rows.append([primary_btn(
         f"🎈 Pump → {next_multiplier:.2f}x",
         callback_data=f"pump_pump:{user_id}",
     )])
@@ -18017,11 +18129,42 @@ def _pump_game_text(game: dict, user_id: str, currency: str, status_line: str = 
 
 async def _pump_show_game(query, user_id: str, game: dict) -> None:
     currency = get_user_currency(user_id)
-    await query.edit_message_text(
-        _pump_game_text(game, user_id, currency),
+    await query.edit_message_media(
+        media=InputMediaPhoto(
+            media=_pump_render_balloon(game),
+            caption=_pump_game_text(game, user_id, currency),
+            parse_mode=ParseMode.HTML,
+        ),
         reply_markup=_pump_game_markup(user_id, game, currency),
-        parse_mode=ParseMode.HTML,
     )
+
+
+async def _pump_edit_result(query, game: dict, caption: str, reply_markup, burst: bool = False) -> None:
+    """Replace the current Pump artwork and show a settled result."""
+    try:
+        await query.edit_message_media(
+            media=InputMediaPhoto(
+                media=_pump_render_balloon(game, burst=burst),
+                caption=caption,
+                parse_mode=ParseMode.HTML,
+            ),
+            reply_markup=reply_markup,
+        )
+    except Exception:
+        # A setup message can be text if Telegram delivered an old callback.
+        # Keep settlement visible even when media replacement is unavailable.
+        try:
+            await query.edit_message_caption(
+                caption=caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=reply_markup,
+            )
+        except Exception:
+            await query.edit_message_text(
+                caption,
+                parse_mode=ParseMode.HTML,
+                reply_markup=reply_markup,
+            )
 
 
 async def pump_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -18138,7 +18281,18 @@ async def pump_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "created_at": time.time(),
             }
             save_data_critical()
-            await _pump_show_game(query, user_id, active_games[user_id])
+            setup_message = query.message
+            try:
+                await setup_message.delete()
+            except Exception:
+                pass
+            await context.bot.send_photo(
+                chat_id=setup_message.chat_id,
+                photo=_pump_render_balloon(active_games[user_id]),
+                caption=_pump_game_text(active_games[user_id], user_id, get_user_currency(user_id)),
+                reply_markup=_pump_game_markup(user_id, active_games[user_id], get_user_currency(user_id)),
+                parse_mode=ParseMode.HTML,
+            )
             return
 
         game = active_games.get(user_id)
@@ -18163,15 +18317,16 @@ async def pump_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             add_match_history(user_id, "pump", claimed["bet_amount"], f"cashout_{multiplier:.2f}", winnings)
             save_data_critical()
             currency = get_user_currency(user_id)
-            await query.edit_message_text(
+            await _pump_edit_result(
+                query,
+                claimed,
                 f"✅ <b>PUMP CASHED OUT!</b>\n\n"
                 f"Multiplier: <b>{multiplier:.2f}x</b>\n"
                 f"Won: <b>{format_balance_in_currency(winnings, currency)}</b>\n"
                 f"Balance: <b>{format_balance_in_currency(get_user_balance(user_id), currency)}</b>",
-                reply_markup=InlineKeyboardMarkup([
+                InlineKeyboardMarkup([
                     [InlineKeyboardButton("🎈 Play Pump Again", callback_data="play_pump")],
                 ]),
-                parse_mode=ParseMode.HTML,
             )
             return
 
@@ -18187,16 +18342,18 @@ async def pump_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             add_match_history(user_id, "pump", claimed["bet_amount"], f"burst_{next_multiplier:.2f}", 0)
             save_data_critical()
             currency = get_user_currency(user_id)
-            await query.edit_message_text(
+            await _pump_edit_result(
+                query,
+                claimed,
                 f"💥 <b>BALLOON BURST!</b>\n\n"
                 f"{_pump_mode(claimed['difficulty'])['balloon']} The balloon burst at the next pump.\n"
                 f"Last safe multiplier: <b>{claimed.get('multiplier', 1.0):.2f}x</b>\n"
                 f"You lost: <b>{format_balance_in_currency(claimed['bet_amount'], currency)}</b>\n"
                 f"Balance: <b>{format_balance_in_currency(get_user_balance(user_id), currency)}</b>",
-                reply_markup=InlineKeyboardMarkup([
+                InlineKeyboardMarkup([
                     [InlineKeyboardButton("🎈 Play Pump Again", callback_data="play_pump")],
                 ]),
-                parse_mode=ParseMode.HTML,
+                burst=True,
             )
             return
 
@@ -18211,15 +18368,16 @@ async def pump_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             deduct_house_balance(max(0.0, winnings - claimed["bet_amount"]))
             add_match_history(user_id, "pump", claimed["bet_amount"], f"max_{next_multiplier:.2f}", winnings)
             save_data_critical()
-            await query.edit_message_text(
+            await _pump_edit_result(
+                query,
+                claimed,
                 f"🎉 <b>MAX MULTIPLIER REACHED!</b>\n\n"
                 f"{_pump_mode(claimed['difficulty'])['balloon']} <b>{next_multiplier:.2f}x</b>\n"
                 f"Won: <b>{format_balance_in_currency(winnings, currency)}</b>\n"
                 f"Balance: <b>{format_balance_in_currency(get_user_balance(user_id), currency)}</b>",
-                reply_markup=InlineKeyboardMarkup([
+                InlineKeyboardMarkup([
                     [InlineKeyboardButton("🎈 Play Pump Again", callback_data="play_pump")],
                 ]),
-                parse_mode=ParseMode.HTML,
             )
             return
 

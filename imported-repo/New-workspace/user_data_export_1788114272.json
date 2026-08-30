@@ -1,6 +1,6 @@
 {
-  "timestamp": 1788113522.3248432,
-  "export_date": "Sun Aug 30 18:12:02 2026",
+  "timestamp": 1788114272.908659,
+  "export_date": "Sun Aug 30 18:24:32 2026",
   "total_users": 1,
   "user_balances": {
     "8598790977": 548.0
@@ -104,7 +104,16 @@
   "user_raffle_tickets": {},
   "pending_deposits": {},
   "pending_withdrawals": {},
-  "active_games": {},
+  "active_games": {
+    "8598790977": {
+      "_created_at": 1788113927.9683666,
+      "type": "pump_setup",
+      "status": "setup",
+      "bet_amount": 2.0,
+      "difficulty": "hard",
+      "created_at": 1788113927.968405
+    }
+  },
   "hilo_games": {},
   "crypto_house_balances": {
     "USDT": 1318.0
