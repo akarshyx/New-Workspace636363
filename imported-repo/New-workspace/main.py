@@ -686,7 +686,6 @@ def _load_processed_payments_file() -> set:
 def ipn_index():
     return "IPN Server Running", 200
 
-@app.route('/limbo_verify')
 def ipn_limbo_verify():
     import hashlib as _hlib
     ss = request.args.get('ss', '')
@@ -801,7 +800,6 @@ print("Crash point:", round(crash_point, 2), "x")
 </html>"""
     return html, 200, {'Content-Type': 'text/html'}
 
-@app.route('/mines_verify')
 def ipn_mines_verify():
     ss = request.args.get('ss', '')
     cs = request.args.get('cs', '')
@@ -877,7 +875,6 @@ print(f"Mines at positions: {{[i for i, t in enumerate(grid) if t == 'M']}}")
 </html>"""
     return html, 200, {'Content-Type': 'text/html'}
 
-@app.route('/tower_verify')
 def ipn_tower_verify():
     ss   = request.args.get('ss', '')
     cs   = request.args.get('cs', '')
@@ -4054,9 +4051,9 @@ elif REPLIT_DOMAIN:
     BASE_URL = f"https://{REPLIT_DOMAIN}"
 else:
     BASE_URL = "https://rollerscasino.duckdns.org"
-# _pf_base: authoritative URL for provably-fair verification pages.
-# Falls back to BASE_URL so PF links work on VPS where _raw_domain is empty.
-_pf_base = BASE_URL
+# Legacy verification URLs are intentionally disabled. Games use their normal
+# random generators and no verification links or commands are exposed.
+_pf_base = ""
 
 # NowPayments will POST to this URL plus /nowpayments/ipn.
 if _server_url_env:
@@ -6341,6 +6338,7 @@ def is_game_actively_playing(game_data: dict) -> bool:
     # Setup / pending states are NOT actively playing
     inactive_types = [
         'tower_setup', 'mines_setup',
+        'pump_setup',
     ]
     if gtype in inactive_types:
         return False
@@ -8795,6 +8793,7 @@ def _build_game_menu_text():
     """
     lines = [
         ("📢", "What games can I play?", None),
+        ("🎯", "Keno", "/keno"),
         ("🎲", "Dice", "/dice"),
         ("🎳", "Bowling", "/bowl"),
         ("🎯", "Darts", "/darts"),
@@ -8898,12 +8897,13 @@ async def games_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     balance = get_user_balance(user_id)
 
     keyboard = [
-        [InlineKeyboardButton("🎲 Dice", callback_data="play_dice_1d2w"), InlineKeyboardButton("🪙 Coinflip", callback_data="play_coinflip")],
-        [InlineKeyboardButton("✂️ RPS", callback_data="play_rps"), InlineKeyboardButton("🎡 Roulette", callback_data="play_roulette")],
-        [InlineKeyboardButton("♠️ Blackjack", callback_data="play_blackjack"), InlineKeyboardButton("📈 Hilo", callback_data="play_hilo")],
-        [InlineKeyboardButton("💣 Mines", callback_data="play_mines"), InlineKeyboardButton("🎯 Keno", callback_data="play_keno")],
+        [InlineKeyboardButton("🎯 Keno", callback_data="play_keno")],
+        [InlineKeyboardButton("🎈 Pump", callback_data="play_pump"), InlineKeyboardButton("🎲 Dice", callback_data="play_dice_1d2w")],
+        [InlineKeyboardButton("🪙 Coinflip", callback_data="play_coinflip"), InlineKeyboardButton("✂️ RPS", callback_data="play_rps")],
+        [InlineKeyboardButton("🎡 Roulette", callback_data="play_roulette"), InlineKeyboardButton("♠️ Blackjack", callback_data="play_blackjack")],
+        [InlineKeyboardButton("📈 Hilo", callback_data="play_hilo"), InlineKeyboardButton("💣 Mines", callback_data="play_mines")],
         [InlineKeyboardButton("🚀 Limbo", callback_data="play_limbo"), InlineKeyboardButton("🎡 Wheel", callback_data="play_wheel")],
-        [InlineKeyboardButton("🎰 Slot Emoji", callback_data="play_slot_emoji"), InlineKeyboardButton("🎰 Slots", callback_data="play_slots")],
+        [InlineKeyboardButton("🎡 Slot Emoji", callback_data="play_slot_emoji"), InlineKeyboardButton("🎰 Slots", callback_data="play_slots")],
         [InlineKeyboardButton("🎲 Sic Bo", callback_data="play_sicbo"), InlineKeyboardButton("🎯 Darts", callback_data="play_darts")],
         [InlineKeyboardButton("⚽ Soccer", callback_data="play_soccer"), InlineKeyboardButton("🏀 Basketball", callback_data="play_basketball")],
         [InlineKeyboardButton("🎳 Bowling", callback_data="play_bowling"), InlineKeyboardButton("🦞 Claw Machine", callback_data="play_claw")],
@@ -9342,6 +9342,8 @@ async def handle_game_callbacks(update: Update, context: ContextTypes.DEFAULT_TY
         )
     elif choice == "play_keno":
         await keno_game.keno_lobby_callback(query, context)
+    elif choice == "play_pump":
+        await _pump_show_bet_picker(query, context)
     elif choice == "play_roulette":
         # Show the interactive roulette interface
         balance = get_user_balance(user_id)
@@ -9361,7 +9363,6 @@ async def handle_game_callbacks(update: Update, context: ContextTypes.DEFAULT_TY
              InlineKeyboardButton("Odd", callback_data="roulette_bet:odd")],
             [InlineKeyboardButton("🔴 Red", callback_data="roulette_bet:red"), 
              InlineKeyboardButton("⚫ Black", callback_data="roulette_bet:black")],
-            [InlineKeyboardButton("🔍 Verify", callback_data="roulette_verify")]
         ]
         
         # Store state
@@ -9386,17 +9387,18 @@ async def handle_game_callbacks(update: Update, context: ContextTypes.DEFAULT_TY
         user_currency = get_user_currency(user_id)
         balance = get_user_balance(user_id)
         keyboard = [
-            [InlineKeyboardButton("🎰 Slots", callback_data="play_slots"), InlineKeyboardButton("🎲 1D2W Dice", callback_data="play_dice_1d2w")],
-            [InlineKeyboardButton("🪙 Coinflip", callback_data="play_coinflip"), InlineKeyboardButton("📈 Hilo", callback_data="play_hilo")],
-            [InlineKeyboardButton("💣 Mines", callback_data="play_mines"), InlineKeyboardButton("🎯 Keno", callback_data="play_keno")],
+            [InlineKeyboardButton("🎯 Keno", callback_data="play_keno")],
+            [InlineKeyboardButton("🎈 Pump", callback_data="play_pump"), InlineKeyboardButton("🎰 Slots", callback_data="play_slots")],
+            [InlineKeyboardButton("🎲 1D2W Dice", callback_data="play_dice_1d2w"), InlineKeyboardButton("🪙 Coinflip", callback_data="play_coinflip")],
+            [InlineKeyboardButton("📈 Hilo", callback_data="play_hilo"), InlineKeyboardButton("💣 Mines", callback_data="play_mines")],
             [InlineKeyboardButton("🚀 Limbo", callback_data="play_limbo"), InlineKeyboardButton("🎲 Sic Bo", callback_data="play_sicbo")],
             [InlineKeyboardButton("🃏 Blackjack", callback_data="play_blackjack"), InlineKeyboardButton("🎡 Wheel", callback_data="play_wheel")],
             [InlineKeyboardButton("✂️ RPS", callback_data="play_rps"), InlineKeyboardButton("🔮 Predict", callback_data="play_predict")],
             [InlineKeyboardButton("🔄 Roulette", callback_data="play_roulette"), InlineKeyboardButton("🔫 Rollers Roulette", callback_data="play_rroulette")],
             [InlineKeyboardButton("🦞 Claw Machine", callback_data="play_claw"), InlineKeyboardButton("🎯 Darts", callback_data="play_darts")],
             [InlineKeyboardButton("⚽ Soccer", callback_data="play_soccer"), InlineKeyboardButton("🏀 Basketball", callback_data="play_basketball")],
-            [InlineKeyboardButton("🎳 Bowling", callback_data="play_bowling")],
-            [InlineKeyboardButton("👥 PvP Challenge", callback_data="play_pvp"), InlineKeyboardButton("🎟️ Raffle", callback_data="view_raffle")]
+            [InlineKeyboardButton("🎳 Bowling", callback_data="play_bowling"), InlineKeyboardButton("👥 PvP Challenge", callback_data="play_pvp")],
+            [InlineKeyboardButton("🎟️ Raffle", callback_data="view_raffle")]
         ]
         await query.edit_message_text(
             f"🏆 <b>PREMIUM GAME LOBBY</b> 🏆\n\n"
@@ -9448,6 +9450,7 @@ async def handle_game_callbacks(update: Update, context: ContextTypes.DEFAULT_TY
 
         game_map = {
             "play_dice_1d2w": "/dice [amount]",
+            "play_pump": "/pump",
             "play_coinflip": "/coinflip [amount]",
             "play_hilo": "/hilo [amount]",
             "play_mines": "/mines [amount]",
@@ -10028,7 +10031,6 @@ async def rules_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "• 💀 <b>Threats, harassment, or scam attempts</b> against players or "
         "the owner = instant permanent ban.\n\n"
         "<b>5. 🎲 Fair Play</b>\n"
-        "• All games use provably fair algorithms — verify with /fairness\n"
         "• House edge is published per-game in the rules screen\n"
         "• Outcomes are final once a round is settled\n\n"
         "<b>6. 💰 Bonuses & Promotions</b>\n"
@@ -15772,20 +15774,10 @@ async def handle_coinflip_flip(query, context: ContextTypes.DEFAULT_TYPE, cf_id:
 
     track_wagering(user_id, bet_amount, CF_WIN_MULTIPLIER)
 
-    # Provably fair: SHA-256(server_seed:client_seed:nonce)
-    import secrets as _cf_sec, hashlib as _cf_hm
-    _cf_ss    = _cf_sec.token_hex(32)
-    _cf_nonce = random.randint(100000, 999999)
-    _cf_cs    = f"{user_id}_{_cf_nonce}"
-    _cf_raw   = f"{_cf_ss}:{_cf_cs}:{_cf_nonce}"
-    _cf_hash  = _cf_hm.sha256(_cf_raw.encode()).hexdigest()
-    _cf_int   = int(_cf_hash[:8], 16)
-    # 0..(CF_BOT_WIN_PCT-1) → house wins, rest → player wins
-    bot_result = user_choice if (_cf_int % 100) >= CF_BOT_WIN_PCT else (
+    # Use a regular random draw; this game no longer exposes verification links.
+    bot_result = user_choice if random.random() >= CF_BOT_WIN_CHANCE else (
         'tails' if user_choice == 'heads' else 'heads'
     )
-    _cf_pf_url = (f"{_pf_base}/cf_verify?ss={_cf_ss}&cs={_cf_cs}&n={_cf_nonce}&h={_cf_hash}"
-                  if _pf_base else "")
 
     side_emoji = {'heads': '🪙', 'tails': '🎲'}
 
@@ -15808,7 +15800,6 @@ async def handle_coinflip_flip(query, context: ContextTypes.DEFAULT_TYPE, cf_id:
             await announce_win_to_channel(context, username, winnings, "Coinflip", multiplier=CF_WIN_MULTIPLIER, bet=bet_amount, user_id=user_id)
         except Exception as e:
             logger.error(f"Failed to announce win: {e}")
-        _pf_line = f'\n<a href="{_cf_pf_url}">🔍 Verify result</a>' if _cf_pf_url else ""
         result_msg = (
             f"{_rc_tag('🎉')} <b>YOU WON</b>\n\n"
             f"{_rc_tag('🪙')} Result: <b>{bot_result.upper()}</b>  |  "
@@ -15816,7 +15807,6 @@ async def handle_coinflip_flip(query, context: ContextTypes.DEFAULT_TYPE, cf_id:
             f"{_rc_tag('💰')} Won: <b>{format_balance_in_currency(winnings, user_currency)}</b> "
             f"({CF_WIN_MULTIPLIER}x)\n"
             f"{_rc_tag('📈')} Balance: <b>{format_balance_in_currency(get_user_balance(user_id), user_currency)}</b>"
-            f"{_pf_line}"
         )
     else:
         add_house_balance(bet_amount)
@@ -15825,14 +15815,12 @@ async def handle_coinflip_flip(query, context: ContextTypes.DEFAULT_TYPE, cf_id:
         except Exception:
             pass
         add_match_history(user_id, 'coinflip', bet_amount, 'loss')
-        _pf_line = f'\n<a href="{_cf_pf_url}">🔍 Verify result</a>' if _cf_pf_url else ""
         result_msg = (
             f"{_rc_tag('❌')} <b>YOU LOST</b>\n\n"
             f"{_rc_tag('🪙')} Result: <b>{bot_result.upper()}</b>  |  "
             f"You picked: <b>{user_choice.upper()}</b>\n\n"
             f"Lost: <b>{format_balance_in_currency(bet_amount, user_currency)}</b>\n"
             f"{_rc_tag('📈')} Balance: <b>{format_balance_in_currency(get_user_balance(user_id), user_currency)}</b>"
-            f"{_pf_line}"
         )
 
     # Send animated coin flip sticker/GIF before revealing the result
@@ -15876,14 +15864,12 @@ async def handle_coinflip_flip(query, context: ContextTypes.DEFAULT_TYPE, cf_id:
     # if a message send raises, the balance is still persisted to disk.
     save_data_critical()
 
-    _cf_pf_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔐 Provably Fair", url=_cf_pf_url)]]) if _cf_pf_url else None
     try:
         await context.bot.send_message(
             chat_id=chat_id,
             text=result_msg,
             parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-            reply_markup=_cf_pf_kb
+            disable_web_page_preview=True
         )
     except Exception as e:
         logger.error(f"Failed to send coinflip result: {e}")
@@ -15904,7 +15890,6 @@ def _roulette_build_keyboard(selection: str = "") -> InlineKeyboardMarkup:
         [btn("1 to 18", "1-18"), btn("19 to 36", "19-36")],
         [btn("Even", "even"), btn("Odd", "odd")],
         [btn("🔴", "red"), btn("⚫", "black")],
-        [InlineKeyboardButton("🔎 Verify", callback_data="roulette_verify")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -16990,10 +16975,11 @@ async def show_games_category_selection(query, context: ContextTypes.DEFAULT_TYP
     balance = get_user_balance(user_id)
 
     keyboard = [
-        [InlineKeyboardButton("🎲 Dice", callback_data="play_dice_1d2w"), InlineKeyboardButton("🪙 Coinflip", callback_data="play_coinflip")],
-        [InlineKeyboardButton("✂️ RPS", callback_data="play_rps"), InlineKeyboardButton("🎡 Roulette", callback_data="play_roulette")],
-        [InlineKeyboardButton("♠️ Blackjack", callback_data="play_blackjack"), InlineKeyboardButton("📈 Hilo", callback_data="play_hilo")],
-        [InlineKeyboardButton("💣 Mines", callback_data="play_mines"), InlineKeyboardButton("🎯 Keno", callback_data="play_keno")],
+        [InlineKeyboardButton("🎯 Keno", callback_data="play_keno")],
+        [InlineKeyboardButton("🎈 Pump", callback_data="play_pump"), InlineKeyboardButton("🎲 Dice", callback_data="play_dice_1d2w")],
+        [InlineKeyboardButton("🪙 Coinflip", callback_data="play_coinflip"), InlineKeyboardButton("✂️ RPS", callback_data="play_rps")],
+        [InlineKeyboardButton("🎡 Roulette", callback_data="play_roulette"), InlineKeyboardButton("♠️ Blackjack", callback_data="play_blackjack")],
+        [InlineKeyboardButton("📈 Hilo", callback_data="play_hilo"), InlineKeyboardButton("💣 Mines", callback_data="play_mines")],
         [InlineKeyboardButton("🚀 Limbo", callback_data="play_limbo"), InlineKeyboardButton("🎡 Wheel", callback_data="play_wheel")],
         [InlineKeyboardButton("🎰 Slots", callback_data="play_slots"), InlineKeyboardButton("🎲 Sic Bo", callback_data="play_sicbo")],
         [InlineKeyboardButton("🎯 Darts", callback_data="play_darts"), InlineKeyboardButton("⚽ Soccer", callback_data="play_soccer")],
@@ -17069,6 +17055,8 @@ async def show_casino_games(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         "🎰 Slots - 🔥 Chicken\n"
         "Play with stunning animations!\n\n"
         "<b>Quick Command Games:</b>\n"
+        "🎯 /keno - Pick numbers and win by matching the draw\n"
+        "🎈 /pump - Inflate a balloon, then cash out before it bursts\n"
         "🎲 /dice [amount] - Roll dice vs bot\n"
         "🔥ª /coinflip [amount] [heads/tails] - Coin flip\n"
         "🏠 /rps [amount] [rock/paper/scissors] - Rock Paper Scissors\n"
@@ -17174,17 +17162,8 @@ async def limbo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     track_wagering(user_id, bet_amount, target_multiplier)
 
-    # ── Provably Fair RNG — 65% house win ────────────────────────────────────
-    server_seed = secrets.token_hex(32)
-    client_seed = f"{user_id}_{random.randint(1000, 9999)}"
-    nonce       = random.randint(1, 1000)
-    hash_result = hashlib.sha256(f"{server_seed}:{client_seed}:{nonce}".encode()).hexdigest()
-    hash_int    = int(hash_result[:8], 16)
-    r           = (hash_int % 1000000) / 1000000.0
-
-    # Provably fair crash formula — 1% natural house edge baked into 0.99 factor.
-    # No forced losses: the distribution naturally gives the house its edge.
-    # P(crash >= X) = 0.99/X for X >= 1.01 → realistic multiplier spread.
+    # Regular random crash draw with the published house edge.
+    r = random.random()
     crash_point = max(1.01, 0.99 / max(0.000001, 1.0 - r))
     if crash_point > 1000:
         crash_point = 1000.0
@@ -17213,9 +17192,6 @@ async def limbo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     bal_d   = format_balance_in_currency(new_balance, user_currency)
     tgt_str = f"{int(target_multiplier)}x" if target_multiplier == int(target_multiplier) else f"{target_multiplier:.2f}x"
     cp_str  = f"{crash_point:.2f}x"
-    pf_url  = (f"{_pf_base}/limbo_verify?ss={server_seed}&cs={client_seed}&n={nonce}&h={hash_result}&t={target_multiplier}"
-               if _pf_base else "")
-
     # ── Fetch profile photo ───────────────────────────────────────────────────
     avatar_bytes = None
     try:
@@ -17227,16 +17203,13 @@ async def limbo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         pass
 
     # ── Result message — clean Telegram format ───────────────────────────────
-    _pf_link = f' — <a href="{pf_url}">provably fair</a>' if pf_url else ""
     _outcome  = "✅" if won else "❌"
-    # Format: "Limbo — provably fair\n\n💵 {bet} → {payout} ({target})\n\nMultiplier: {crash}x ✅/❌"
     caption = (
-        f'Limbo{_pf_link}\n\n'
+        f'Limbo\n\n'
         f'💵 {bet_d} → <b>{win_d}</b> ({tgt_str})\n\n'
         f'Multiplier: <b>{crash_point:.2f}x</b> {_outcome}'
     )
-    _limbo_pf_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔐 Provably Fair", url=pf_url)]]) if pf_url else None
-    await update.message.reply_text(caption, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=_limbo_pf_kb)
+    await update.message.reply_text(caption, parse_mode=ParseMode.HTML)
 
 async def mines_action_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Wrapper to handle mines actions from main callback handler."""
@@ -17834,6 +17807,431 @@ async def tower_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except ValueError:
         await update.message.reply_text("❌ Please enter a valid amount")
 
+
+# ══════════════════════════════════════════════════════════════════════════
+# 🎈 PUMP — progressive balloon multiplier game
+# ══════════════════════════════════════════════════════════════════════════
+
+PUMP_MODES = {
+    "medium": {"label": "Medium", "balloon": "🔵", "max_multiplier": 300.0, "growth": 1.12, "edge": 0.96},
+    "hard": {"label": "Hard", "balloon": "🔴", "max_multiplier": 1000.0, "growth": 1.14, "edge": 0.93},
+}
+PUMP_QUICK_BETS = (2.0, 5.0, 10.0, 20.0, 40.0)
+_pump_action_in_progress = set()
+
+
+def _pump_mode(mode: str) -> dict:
+    return PUMP_MODES.get(mode, PUMP_MODES["medium"])
+
+
+def _pump_bet_options(balance_usd: float) -> list[float]:
+    """Return the requested quick bets, plus a balance-sized fallback."""
+    options = [amount for amount in PUMP_QUICK_BETS if amount <= balance_usd + 1e-9]
+    if not options and balance_usd >= MIN_BET:
+        options.append(round(balance_usd, 2))
+    return options
+
+
+def _pump_parse_bet(raw_text: str, user_id: str) -> tuple[float | None, str | None]:
+    """Parse a Pump bet entered in the player's display currency."""
+    currency = get_user_currency(user_id)
+    balance = get_user_balance(user_id)
+    raw = str(raw_text).strip().lower().replace("$", "").replace(",", "")
+    try:
+        if raw in ("all", "full", "all in", "allin"):
+            amount = balance
+        elif raw == "half":
+            amount = balance / 2
+        else:
+            amount = convert_currency_to_usd(float(raw), currency)
+    except (TypeError, ValueError):
+        return None, "❌ Please enter a valid amount, for example <code>10</code> or <code>all in</code>."
+
+    if amount < MIN_BET:
+        return None, f"❌ Minimum bet is {format_balance_in_currency(MIN_BET, currency)}."
+    if amount > MAX_BET_SPECIAL:
+        return None, f"❌ Maximum bet is {format_balance_in_currency(MAX_BET_SPECIAL, currency)}."
+    if amount > balance + 1e-9:
+        return None, f"❌ Your balance is only {format_balance_in_currency(balance, currency)}."
+    return round(amount, 2), None
+
+
+def _pump_bet_markup(user_id: str, balance_usd: float, currency: str) -> InlineKeyboardMarkup:
+    rows = []
+    options = _pump_bet_options(balance_usd)
+    for index in range(0, len(options), 2):
+        rows.append([
+            InlineKeyboardButton(
+                format_balance_in_currency(amount, currency),
+                callback_data=f"pump_bet:{user_id}:{amount}",
+            )
+            for amount in options[index:index + 2]
+        ])
+    rows.append([
+        InlineKeyboardButton("🔥 All In", callback_data=f"pump_allin:{user_id}"),
+        InlineKeyboardButton("✏️ Custom Amount", callback_data=f"pump_custom:{user_id}"),
+    ])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _pump_bet_text(balance_usd: float, currency: str) -> str:
+    return (
+        "🎈 <b>PUMP</b>\n\n"
+        "Inflate the balloon and cash out before it bursts.\n"
+        "Choose a bet below, or enter your own amount.\n\n"
+        f"Minimum bet: <b>{format_balance_in_currency(MIN_BET, currency)}</b>\n"
+        f"Balance: <b>{format_balance_in_currency(balance_usd, currency)}</b>"
+    )
+
+
+async def _pump_send_bet_picker(message, user_id: str) -> None:
+    currency = get_user_currency(user_id)
+    balance = get_user_balance(user_id)
+    user_states[user_id] = "pump_waiting_bet"
+    await message.reply_text(
+        _pump_bet_text(balance, currency),
+        reply_markup=_pump_bet_markup(user_id, balance, currency),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _pump_show_bet_picker(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = str(query.from_user.id)
+    currency = get_user_currency(user_id)
+    balance = get_user_balance(user_id)
+    user_states[user_id] = "pump_waiting_bet"
+    await query.edit_message_text(
+        _pump_bet_text(balance, currency),
+        reply_markup=_pump_bet_markup(user_id, balance, currency),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+def _pump_setup_markup(user_id: str, difficulty: str | None) -> InlineKeyboardMarkup:
+    medium_label = f"🔵 Medium {'✅' if difficulty == 'medium' else ''}".strip()
+    hard_label = f"🔴 Hard {'✅' if difficulty == 'hard' else ''}".strip()
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(medium_label, callback_data=f"pump_mode:{user_id}:medium"),
+            InlineKeyboardButton(hard_label, callback_data=f"pump_mode:{user_id}:hard"),
+        ],
+        [InlineKeyboardButton("🎈 Start Pump", callback_data=f"pump_start:{user_id}")],
+        [
+            InlineKeyboardButton("✏️ Change Bet", callback_data=f"pump_change_bet:{user_id}"),
+            InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu"),
+        ],
+    ])
+
+
+def _pump_setup_text(bet_amount: float, currency: str, difficulty: str | None) -> str:
+    selected = _pump_mode(difficulty)["label"] if difficulty else "Choose a level"
+    return (
+        "🎈 <b>PUMP</b>\n\n"
+        f"Bet: <b>{format_balance_in_currency(bet_amount, currency)}</b>\n"
+        f"Level: <b>{selected}</b>\n\n"
+        "🔵 <b>Medium</b> — blue balloon, up to <b>300x</b>\n"
+        "🔴 <b>Hard</b> — red balloon, up to <b>1000x</b>\n\n"
+        "Choose a level, then tap <b>Start Pump</b>."
+    )
+
+
+async def _pump_send_setup_message(message, context: ContextTypes.DEFAULT_TYPE, user_id: str, bet_amount: float) -> None:
+    currency = get_user_currency(user_id)
+    user_states.pop(user_id, None)
+    active_games[user_id] = {
+        "_created_at": time.time(),
+        "type": "pump_setup",
+        "status": "setup",
+        "bet_amount": round(float(bet_amount), 2),
+        "difficulty": None,
+        "created_at": time.time(),
+    }
+    await message.reply_text(
+        _pump_setup_text(bet_amount, currency, None),
+        reply_markup=_pump_setup_markup(user_id, None),
+        parse_mode=ParseMode.HTML,
+    )
+    save_data()
+
+
+async def _pump_show_setup(query, user_id: str, game_data: dict) -> None:
+    currency = get_user_currency(user_id)
+    await query.edit_message_text(
+        _pump_setup_text(game_data["bet_amount"], currency, game_data.get("difficulty")),
+        reply_markup=_pump_setup_markup(user_id, game_data.get("difficulty")),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+def _pump_multiplier(mode: str, pumps: int) -> float:
+    config = _pump_mode(mode)
+    if pumps <= 0:
+        return 1.0
+    return round(min(config["max_multiplier"], 1.10 * (config["growth"] ** (pumps - 1))), 2)
+
+
+def _pump_generate_burst_point(mode: str) -> float:
+    """Generate the round's burst threshold once, with a capped RTP-friendly draw."""
+    config = _pump_mode(mode)
+    random_value = random.random()
+    point = config["edge"] / max(0.000001, 1.0 - random_value)
+    return round(min(config["max_multiplier"], max(1.0, point)), 2)
+
+
+def _pump_game_markup(user_id: str, game: dict, currency: str) -> InlineKeyboardMarkup:
+    current = float(game.get("multiplier", 1.0))
+    pumps = int(game.get("pumps", 0))
+    next_multiplier = _pump_multiplier(game["difficulty"], pumps + 1)
+    rows = []
+    if pumps > 0:
+        payout = game["bet_amount"] * current
+        rows.append([InlineKeyboardButton(
+            f"💰 Cash Out {format_balance_in_currency(payout, currency)} ({current:.2f}x)",
+            callback_data=f"pump_cashout:{user_id}",
+        )])
+    rows.append([InlineKeyboardButton(
+        f"🎈 Pump → {next_multiplier:.2f}x",
+        callback_data=f"pump_pump:{user_id}",
+    )])
+    return InlineKeyboardMarkup(rows)
+
+
+def _pump_game_text(game: dict, user_id: str, currency: str, status_line: str = "") -> str:
+    config = _pump_mode(game["difficulty"])
+    multiplier = float(game.get("multiplier", 1.0))
+    payout = game["bet_amount"] * multiplier
+    balance = get_user_balance(user_id)
+    next_multiplier = _pump_multiplier(game["difficulty"], int(game.get("pumps", 0)) + 1)
+    prefix = f"{status_line}\n\n" if status_line else ""
+    return (
+        f"{prefix}{config['balloon']} <b>PUMP — {config['label']}</b>\n\n"
+        f"<b>{multiplier:.2f}x</b>\n\n"
+        f"Bet: <b>{format_balance_in_currency(game['bet_amount'], currency)}</b>\n"
+        f"Cashout: <b>{format_balance_in_currency(payout, currency)}</b>\n"
+        f"Next pump: <b>{next_multiplier:.2f}x</b>\n"
+        f"Balance: <b>{format_balance_in_currency(balance, currency)}</b>\n\n"
+        "Pump again to raise the multiplier, or cash out before the balloon bursts."
+    )
+
+
+async def _pump_show_game(query, user_id: str, game: dict) -> None:
+    currency = get_user_currency(user_id)
+    await query.edit_message_text(
+        _pump_game_text(game, user_id, currency),
+        reply_markup=_pump_game_markup(user_id, game, currency),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def pump_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Open the Pump bet picker or start its difficulty setup."""
+    if not update.message or not update.message.from_user:
+        return
+    user_id = str(update.message.from_user.id)
+    existing = active_games.get(user_id)
+    if existing and existing.get("type") == "pump" and is_game_actively_playing(existing):
+        await update.message.reply_text("🎈 You already have an active Pump game. Use its buttons to pump or cash out.")
+        return
+    if existing and existing.get("type") == "pump_setup":
+        await update.message.reply_text(
+            _pump_setup_text(existing["bet_amount"], get_user_currency(user_id), existing.get("difficulty")),
+            reply_markup=_pump_setup_markup(user_id, existing.get("difficulty")),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if not context.args:
+        await _pump_send_bet_picker(update.message, user_id)
+        return
+    bet_amount, error = _pump_parse_bet(context.args[0], user_id)
+    if error:
+        await update.message.reply_text(error, parse_mode=ParseMode.HTML)
+        return
+    await _pump_send_setup_message(update.message, context, user_id, bet_amount)
+
+
+async def pump_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    data = query.data or ""
+    parts = data.split(":")
+    user_id = str(query.from_user.id)
+
+    # Every Pump button carries its owner id, so group members cannot operate
+    # another player's round.
+    if len(parts) < 2 or parts[1] != user_id:
+        await query.answer(_NOT_YOUR_BUTTON, show_alert=True)
+        return
+
+    if user_id in _pump_action_in_progress:
+        await query.answer("⏳ Processing your Pump action…")
+        return
+    _pump_action_in_progress.add(user_id)
+    try:
+        await query.answer()
+
+        if parts[0] in ("pump_custom", "pump_change_bet"):
+            active_games.pop(user_id, None)
+            user_states[user_id] = "pump_waiting_bet"
+            currency = get_user_currency(user_id)
+            balance = get_user_balance(user_id)
+            await query.edit_message_text(
+                _pump_bet_text(balance, currency) + "\n\n<i>Send your custom amount now.</i>",
+                reply_markup=_pump_bet_markup(user_id, balance, currency),
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        if parts[0] == "pump_bet":
+            bet_amount = float(parts[2])
+            if bet_amount < MIN_BET or bet_amount > get_user_balance(user_id):
+                await query.answer("❌ That bet is no longer available.", show_alert=True)
+                return
+            await _pump_send_setup_message(query.message, context, user_id, bet_amount)
+            return
+
+        if parts[0] == "pump_allin":
+            bet_amount = round(get_user_balance(user_id), 2)
+            if bet_amount < MIN_BET:
+                await query.answer("❌ Your balance is below the minimum bet.", show_alert=True)
+                return
+            await _pump_send_setup_message(query.message, context, user_id, bet_amount)
+            return
+
+        if parts[0] == "pump_mode":
+            game = active_games.get(user_id)
+            mode = parts[2] if len(parts) > 2 else ""
+            if not game or game.get("type") != "pump_setup" or mode not in PUMP_MODES:
+                await query.answer("❌ Pump setup expired. Use /pump again.", show_alert=True)
+                return
+            game["difficulty"] = mode
+            await _pump_show_setup(query, user_id, game)
+            save_data()
+            return
+
+        if parts[0] == "pump_start":
+            setup = active_games.get(user_id)
+            if not setup or setup.get("type") != "pump_setup":
+                await query.answer("❌ Pump setup expired. Use /pump again.", show_alert=True)
+                return
+            mode = setup.get("difficulty")
+            if mode not in PUMP_MODES:
+                await query.answer("Choose Medium or Hard first.", show_alert=True)
+                return
+            bet_amount = float(setup["bet_amount"])
+            if bet_amount > get_user_balance(user_id):
+                await query.answer("❌ Your balance is too low for this bet.", show_alert=True)
+                return
+            if not deduct_user_balance(user_id, bet_amount):
+                await query.answer("❌ You already have an active game or the bet could not be placed.", show_alert=True)
+                return
+            add_house_balance(bet_amount)
+            track_wagering(user_id, bet_amount, 2.0)
+            active_games[user_id] = {
+                "_created_at": time.time(),
+                "type": "pump",
+                "status": "playing",
+                "bet_amount": bet_amount,
+                "difficulty": mode,
+                "multiplier": 1.0,
+                "pumps": 0,
+                "burst_point": _pump_generate_burst_point(mode),
+                "created_at": time.time(),
+            }
+            save_data_critical()
+            await _pump_show_game(query, user_id, active_games[user_id])
+            return
+
+        game = active_games.get(user_id)
+        if not game or game.get("type") != "pump" or game.get("status") != "playing":
+            await query.answer("❌ No active Pump game.", show_alert=True)
+            return
+
+        if parts[0] == "pump_cashout":
+            claimed = active_games.pop(user_id, None)
+            if not claimed:
+                await query.answer("❌ This Pump game is already settled.", show_alert=True)
+                return
+            multiplier = float(claimed.get("multiplier", 1.0))
+            if multiplier <= 1.0:
+                active_games[user_id] = claimed
+                await query.answer("Pump at least once before cashing out.", show_alert=True)
+                return
+            winnings = round(claimed["bet_amount"] * multiplier, 2)
+            ultra_secure_add_user_balance(user_id, winnings, "cashout")
+            track_win(user_id, winnings)
+            deduct_house_balance(max(0.0, winnings - claimed["bet_amount"]))
+            add_match_history(user_id, "pump", claimed["bet_amount"], f"cashout_{multiplier:.2f}", winnings)
+            save_data_critical()
+            currency = get_user_currency(user_id)
+            await query.edit_message_text(
+                f"✅ <b>PUMP CASHED OUT!</b>\n\n"
+                f"Multiplier: <b>{multiplier:.2f}x</b>\n"
+                f"Won: <b>{format_balance_in_currency(winnings, currency)}</b>\n"
+                f"Balance: <b>{format_balance_in_currency(get_user_balance(user_id), currency)}</b>",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🎈 Play Pump Again", callback_data="play_pump")],
+                ]),
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        if parts[0] != "pump_pump":
+            return
+
+        next_multiplier = _pump_multiplier(game["difficulty"], int(game.get("pumps", 0)) + 1)
+        if next_multiplier > float(game.get("burst_point", 1.0)) + 1e-9:
+            claimed = active_games.pop(user_id, None)
+            if not claimed:
+                return
+            add_loss_to_rakeback(user_id, claimed["bet_amount"])
+            add_match_history(user_id, "pump", claimed["bet_amount"], f"burst_{next_multiplier:.2f}", 0)
+            save_data_critical()
+            currency = get_user_currency(user_id)
+            await query.edit_message_text(
+                f"💥 <b>BALLOON BURST!</b>\n\n"
+                f"{_pump_mode(claimed['difficulty'])['balloon']} The balloon burst at the next pump.\n"
+                f"Last safe multiplier: <b>{claimed.get('multiplier', 1.0):.2f}x</b>\n"
+                f"You lost: <b>{format_balance_in_currency(claimed['bet_amount'], currency)}</b>\n"
+                f"Balance: <b>{format_balance_in_currency(get_user_balance(user_id), currency)}</b>",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🎈 Play Pump Again", callback_data="play_pump")],
+                ]),
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        game["pumps"] = int(game.get("pumps", 0)) + 1
+        game["multiplier"] = next_multiplier
+        currency = get_user_currency(user_id)
+        if next_multiplier >= _pump_mode(game["difficulty"])["max_multiplier"]:
+            claimed = active_games.pop(user_id, None)
+            winnings = round(claimed["bet_amount"] * next_multiplier, 2)
+            ultra_secure_add_user_balance(user_id, winnings, "win")
+            track_win(user_id, winnings)
+            deduct_house_balance(max(0.0, winnings - claimed["bet_amount"]))
+            add_match_history(user_id, "pump", claimed["bet_amount"], f"max_{next_multiplier:.2f}", winnings)
+            save_data_critical()
+            await query.edit_message_text(
+                f"🎉 <b>MAX MULTIPLIER REACHED!</b>\n\n"
+                f"{_pump_mode(claimed['difficulty'])['balloon']} <b>{next_multiplier:.2f}x</b>\n"
+                f"Won: <b>{format_balance_in_currency(winnings, currency)}</b>\n"
+                f"Balance: <b>{format_balance_in_currency(get_user_balance(user_id), currency)}</b>",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🎈 Play Pump Again", callback_data="play_pump")],
+                ]),
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        save_data()
+        await _pump_show_game(query, user_id, game)
+    except (ValueError, IndexError) as error:
+        logger.warning(f"Pump callback parse error for {user_id}: {error}")
+        await query.answer("❌ Invalid Pump action.", show_alert=True)
+    finally:
+        _pump_action_in_progress.discard(user_id)
+
+
 async def start_mines_setup(update: Update, context: ContextTypes.DEFAULT_TYPE, bet_amount: float) -> None:
     """Start mines game setup matching IMG_6398."""
     if not update.message or not update.message.from_user:
@@ -17894,7 +18292,7 @@ async def start_mines_setup(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     setup_message = (
-        f"<b>Mines - provably fair [?]</b>\n\n"
+        f"<b>Mines</b>\n\n"
         f"Multiplier increases until you find a mine, cashout at anytime!\n\n"
         f"Balance: <b>{format_balance_in_currency(user_balance, user_currency)}</b>"
     )
@@ -17981,7 +18379,7 @@ async def handle_mines_setup_callback(update: Update, context: ContextTypes.DEFA
     keyboard.append([InlineKeyboardButton("Start Game 🎮", callback_data="mines_start")])
     
     setup_message = (
-        f"<b>Mines - Provably Fair</b>\n\n"
+        f"<b>Mines</b>\n\n"
         f"Multiplier increases for every diamond found. Don't hit the mine!\n\n"
         f"Balance: <b>{format_balance_in_currency(user_balance, user_currency)}</b>\n"
         f"Current Setup: <b>{grid_size}x{grid_size} Grid</b> | <b>{mines_count} Mines</b>"
@@ -18140,11 +18538,7 @@ async def handle_tower_callback(query, context: ContextTypes.DEFAULT_TYPE) -> No
                 pass
             return
         difficulty = data.replace("tower_", "")
-        _twr_pf_ss = secrets.token_hex(32)
-        _twr_pf_nonce = random.randint(1, 999999)
-        _twr_pf_cs = f"{user_id}_{_twr_pf_nonce}"
-        _twr_pf_hash = hashlib.sha256(f"{_twr_pf_ss}:{_twr_pf_cs}:{_twr_pf_nonce}".encode()).hexdigest()
-        tower_game = TowerGame(user_id=int(user_id), mode=difficulty, bet=float(bet_amount), seed=_twr_pf_hash)
+        tower_game = TowerGame(user_id=int(user_id), mode=difficulty, bet=float(bet_amount))
         active_games[user_id] = {
             '_created_at': time.time(),
             'type': 'tower',
@@ -18155,9 +18549,6 @@ async def handle_tower_callback(query, context: ContextTypes.DEFAULT_TYPE) -> No
             'created_at': time.time(),
             'msg_id': query.message.message_id,
             'chat_id': query.message.chat_id,
-            'pf_server_seed': _twr_pf_ss,
-            'pf_client_seed': _twr_pf_cs,
-            'pf_nonce': _twr_pf_nonce,
         }
         save_data()
         await show_tower_grid(query, context)
@@ -18206,11 +18597,7 @@ async def handle_tower_callback(query, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         add_house_balance(bet_amount)
         track_wagering(user_id, bet_amount, 2.0)
-        _qb_pf_ss = secrets.token_hex(32)
-        _qb_pf_nonce = random.randint(1, 999999)
-        _qb_pf_cs = f"{user_id}_{_qb_pf_nonce}"
-        _qb_pf_hash = hashlib.sha256(f"{_qb_pf_ss}:{_qb_pf_cs}:{_qb_pf_nonce}".encode()).hexdigest()
-        tower_game = TowerGame(user_id=int(user_id), mode="medium", bet=float(bet_amount), seed=_qb_pf_hash)
+        tower_game = TowerGame(user_id=int(user_id), mode="medium", bet=float(bet_amount))
         active_games[user_id] = {
             '_created_at': time.time(),
             'type': 'tower',
@@ -18221,9 +18608,6 @@ async def handle_tower_callback(query, context: ContextTypes.DEFAULT_TYPE) -> No
             'created_at': time.time(),
             'msg_id': query.message.message_id,
             'chat_id': query.message.chat_id,
-            'pf_server_seed': _qb_pf_ss,
-            'pf_client_seed': _qb_pf_cs,
-            'pf_nonce': _qb_pf_nonce,
         }
         save_data()
         await show_tower_grid(query, context)
@@ -18271,12 +18655,8 @@ async def start_actual_tower_game(query, context, game_data):
     bet_amount = game_data['bet_amount']
     difficulty = game_data.get('difficulty', 'medium')
     
-    # Initialize game state — generate PF seeds first so the seeded RNG drives layout
-    _sta_pf_ss = secrets.token_hex(32)
-    _sta_pf_nonce = random.randint(1, 999999)
-    _sta_pf_cs = f"{user_id}_{_sta_pf_nonce}"
-    _sta_pf_hash = hashlib.sha256(f"{_sta_pf_ss}:{_sta_pf_cs}:{_sta_pf_nonce}".encode()).hexdigest()
-    tower_game = TowerGame(user_id=int(user_id), mode=difficulty, bet=float(bet_amount), seed=_sta_pf_hash)
+    # Initialize the layout with the game's normal random generator.
+    tower_game = TowerGame(user_id=int(user_id), mode=difficulty, bet=float(bet_amount))
     
     # Track the outcome of the user's choice to display it correctly
     tower_game.user_choices = {} 
@@ -18287,9 +18667,6 @@ async def start_actual_tower_game(query, context, game_data):
         'status': 'playing',
         'msg_id': query.message.message_id,
         'chat_id': query.message.chat_id,
-        'pf_server_seed': _sta_pf_ss,
-        'pf_client_seed': _sta_pf_cs,
-        'pf_nonce': _sta_pf_nonce,
     })
     
     active_games[user_id] = game_data
@@ -22348,13 +22725,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     elif query.data.startswith("reject_crypto_withdrawal_"):
         withdrawal_id = query.data.replace("reject_crypto_withdrawal_", "")
         await show_withdrawal_reject_reasons(query, withdrawal_id, "cr")
-    elif query.data.startswith('l_p_'):
-        # Limbo proof callback: l_p_{server_seed[:8]}_{client_seed[-10:]}_{hash_result[:8]}
-        try:
-            await query.answer("✅ Provably Fair verified!", show_alert=True)
-        except Exception:
-            pass
-        return
     elif query.data.startswith("approve_np_withdrawal_"):
         withdrawal_id = query.data.replace("approve_np_withdrawal_", "")
         await handle_owner_approve_np_withdrawal(query, context, withdrawal_id)
@@ -24003,34 +24373,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await handle_animated_game_cashout(query, context)
     elif query.data.startswith("continue_"):
         await handle_continue_playing(query, context)
-    elif query.data.startswith("limbo_proof_"):
-        # Handle provably fair verification for limbo
-        try:
-            parts = query.data.replace("limbo_proof_", "").split("_")
-            if len(parts) >= 5:
-                user_id = parts[0]
-                timestamp = parts[1]
-                server_seed = parts[2]
-                client_seed = parts[3]
-                hash_result = parts[4]
-                
-                pf_msg = (
-                    f"🎰 <b>Limbo - provably fair</b>\n\n"
-                    f"<b>Server Seed:</b> `{server_seed}...`\n"
-                    f"<b>Client Seed:</b> `{client_seed}`\n"
-                    f"<b>Hash Result:</b> `{hash_result}...`\n\n"
-                    f"✅ Game result verified as fair and transparent!"
-                )
-                try:
-                    await query.answer(pf_msg, show_alert=True)
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.error(f"Error handling limbo proof: {e}")
-            try:
-                await query.answer("❌ Error retrieving provably fair data", show_alert=True)
-            except Exception:
-                pass
     elif "_bot_" in query.data and ("d" in query.data and "w" in query.data):
         # Handle sports game bot format selection (e.g., darts_bot_1d2w_50)
         await handle_sports_game_format_selection(query, context, "bot")
@@ -24515,13 +24857,8 @@ async def handle_mines_start(query, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Create mines game
     total_tiles = grid_size * grid_size
-    # Provably fair — seeded private RNG for mine placement
-    _mpf_ss = secrets.token_hex(32)
-    _mpf_nonce = random.randint(1, 999999)
-    _mpf_cs = f"{user_id}_{_mpf_nonce}"
-    _mpf_hash = hashlib.sha256(f"{_mpf_ss}:{_mpf_cs}:{_mpf_nonce}".encode()).hexdigest()
     grid = ['💎'] * (total_tiles - mine_count) + ['💣'] * mine_count
-    random.Random(_mpf_hash).shuffle(grid)
+    random.shuffle(grid)
 
     # Remove house edge for animated games as requested
     house_edge_factor = 1.0 # No house edge
@@ -24540,10 +24877,6 @@ async def handle_mines_start(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         'created_at': time.time(),
         'msg_id': query.message.message_id,
         'chat_id': query.message.chat_id,
-        'pf_server_seed': _mpf_ss,
-        'pf_client_seed': _mpf_cs,
-        'pf_nonce': _mpf_nonce,
-        'pf_hash': _mpf_hash,
     }
 
     await show_mines_game(query, context)
@@ -24613,19 +24946,13 @@ async def show_mines_game(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     user_balance = get_user_balance(user_id)
-    _mpf_ss2 = game_data.get('pf_server_seed', '')
-    _mpf_url2 = (f"{_pf_base}/mines_verify?ss={_mpf_ss2}&cs={game_data.get('pf_client_seed','')}&n={game_data.get('pf_nonce','')}&g={grid_size}&m={game_data['mines']}"
-                 if (_mpf_ss2 and _pf_base) else "")
     message = (
         f"💵 <b>Bet:</b> {format_balance_in_currency(game_data['bet_amount'], user_currency)}\n\n"
         f"💣 <b>Mines:</b> {game_data['mines']}\n"
         f"💎 <b>Crystals found:</b> {diamonds_found}\n\n"
         f"🏆 <b>Win:</b> {format_balance_in_currency(current_value, user_currency)}"
     )
-    if _mpf_url2:
-        message += f'\n\n<a href="{_mpf_url2}">🔐 Provably Fair</a>'
-
-    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
 async def handle_mines_tile_click(query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle mines tile click."""
@@ -24693,9 +25020,6 @@ async def handle_mines_tile_click(query, context: ContextTypes.DEFAULT_TYPE) -> 
         return max(1.05, mult)
 
     if tile_content == "💣" or tile_content == "🔥":
-        _hit_pf_ss = game_data.get('pf_server_seed', '')
-        _hit_pf_url = (f"{_pf_base}/mines_verify?ss={_hit_pf_ss}&cs={game_data.get('pf_client_seed','')}&n={game_data.get('pf_nonce','')}&g={grid_size}&m={mines_count}"
-                       if (_hit_pf_ss and _pf_base) else "#")
         add_house_balance(bet_amount)
         if user_id in active_games:
             del active_games[user_id]
@@ -24715,8 +25039,6 @@ async def handle_mines_tile_click(query, context: ContextTypes.DEFAULT_TYPE) -> 
                     row.append(InlineKeyboardButton("⬜", callback_data="noop"))
             keyboard.append(row)
         keyboard.append([InlineKeyboardButton("🔄 Repeat", callback_data="mines_setup_start")])
-        if _hit_pf_url and _hit_pf_url != "#":
-            keyboard.append([InlineKeyboardButton("🔐 Provably Fair", url=_hit_pf_url)])
         diamonds_found_before_hit = game_data.get("diamonds_found", 0)
         message = (
             f"💵 <b>Bet:</b> {format_balance_in_currency(bet_amount, user_currency)}\n\n"
@@ -24744,9 +25066,6 @@ async def handle_mines_tile_click(query, context: ContextTypes.DEFAULT_TYPE) -> 
             keyboard.append(row)
         current_value = bet_amount * multiplier
         keyboard.append([InlineKeyboardButton(f"✅ Cash Out {format_balance_in_currency(current_value, user_currency)} ({multiplier:.2f}x)", callback_data="mines_cashout")])
-        _safe_pf_ss = game_data.get('pf_server_seed', '')
-        _safe_pf_url = (f"{_pf_base}/mines_verify?ss={_safe_pf_ss}&cs={game_data.get('pf_client_seed','')}&n={game_data.get('pf_nonce','')}&g={grid_size}&m={mines_count}"
-                        if (_safe_pf_ss and _pf_base) else "")
         diamonds_hit = game_data['diamonds_found']
         message = (
             f"💵 <b>Bet:</b> {format_balance_in_currency(bet_amount, user_currency)}\n\n"
@@ -24754,10 +25073,8 @@ async def handle_mines_tile_click(query, context: ContextTypes.DEFAULT_TYPE) -> 
             f"💎 <b>Crystals found:</b> {diamonds_hit}\n\n"
             f"✅ <b>Win:</b> {format_balance_in_currency(current_value, user_currency)} ({multiplier:.2f}x)"
         )
-        if _safe_pf_url:
-            message += f'\n\n<a href="{_safe_pf_url}">🔐 Provably Fair</a>'
         try:
-            await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         except Exception as _me:
             logger.error(f"mines tile edit error: {_me}")
         save_data()
@@ -24842,18 +25159,12 @@ async def handle_mines_cashout(query, context: ContextTypes.DEFAULT_TYPE) -> Non
         deduct_house_balance(winnings - bet_amount)
         save_data_critical()
 
-        _co_pf_ss = game_data.get('pf_server_seed', '')
-        _co_pf_url = (f"{_pf_base}/mines_verify?ss={_co_pf_ss}&cs={game_data.get('pf_client_seed','')}&n={game_data.get('pf_nonce','')}&g={grid_size}&m={mines_count}"
-                      if (_co_pf_ss and _pf_base) else "#")
         message = (
             f"💵 <b>Bet:</b> {format_balance_in_currency(bet_amount, user_currency)}\n\n"
             f"💣 <b>Mines:</b> {mines_count}\n"
             f"💎 <b>Crystals found:</b> {diamonds_found}\n\n"
             f"🏆 <b>Win:</b> {format_balance_in_currency(winnings, user_currency)} ({multiplier:.2f}x)"
         )
-        if _co_pf_url and _co_pf_url != "#":
-            message += f'\n\n<a href="{_co_pf_url}">🔐 Provably Fair</a>'
-
         keyboard = []
         for r in range(grid_size):
             row = []
@@ -25111,11 +25422,7 @@ async def handle_tower_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         game_data = active_games.get(user_id)
         bet_amount = game_data.get('bet_amount', 0) if game_data and game_data.get('type') in ['tower_setup', 'tower'] else 0
         difficulty = data.replace("tower_", "")
-        _twr_pf_ss = secrets.token_hex(32)
-        _twr_pf_nonce = random.randint(1, 999999)
-        _twr_pf_cs = f"{user_id}_{_twr_pf_nonce}"
-        _twr_pf_hash = hashlib.sha256(f"{_twr_pf_ss}:{_twr_pf_cs}:{_twr_pf_nonce}".encode()).hexdigest()
-        tower_game = TowerGame(user_id=int(user_id), mode=difficulty, bet=float(bet_amount), seed=_twr_pf_hash)
+        tower_game = TowerGame(user_id=int(user_id), mode=difficulty, bet=float(bet_amount))
         active_games[user_id] = {
             '_created_at': time.time(),
             'type': 'tower',
@@ -25126,9 +25433,6 @@ async def handle_tower_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             'created_at': time.time(),
             'msg_id': query.message.message_id,
             'chat_id': query.message.chat_id,
-            'pf_server_seed': _twr_pf_ss,
-            'pf_client_seed': _twr_pf_cs,
-            'pf_nonce': _twr_pf_nonce,
         }
         save_data()
         await show_tower_grid(query, context)
@@ -25209,11 +25513,7 @@ async def handle_tower_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         track_wagering(user_id, bet_amount, 2.0)
         prev_difficulty = active_games.get(user_id, {}).get('difficulty', 'medium')
         # Skip difficulty screen — launch game immediately with same difficulty
-        _tpa_pf_ss = secrets.token_hex(32)
-        _tpa_pf_nonce = random.randint(1, 999999)
-        _tpa_pf_cs = f"{user_id}_{_tpa_pf_nonce}"
-        _tpa_pf_hash = hashlib.sha256(f"{_tpa_pf_ss}:{_tpa_pf_cs}:{_tpa_pf_nonce}".encode()).hexdigest()
-        tower_game = TowerGame(user_id=int(user_id), mode=prev_difficulty, bet=float(bet_amount), seed=_tpa_pf_hash)
+        tower_game = TowerGame(user_id=int(user_id), mode=prev_difficulty, bet=float(bet_amount))
         active_games[user_id] = {
             '_created_at': time.time(),
             'type': 'tower',
@@ -25224,9 +25524,6 @@ async def handle_tower_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             'created_at': time.time(),
             'msg_id': query.message.message_id,
             'chat_id': query.message.chat_id,
-            'pf_server_seed': _tpa_pf_ss,
-            'pf_client_seed': _tpa_pf_cs,
-            'pf_nonce': _tpa_pf_nonce,
         }
         save_data()
         await show_tower_grid(query, context)
@@ -25484,11 +25781,6 @@ async def handle_tower_tile_click(query, context: ContextTypes.DEFAULT_TYPE) -> 
             pass
         return
 
-    # Capture PF URL before removing from active_games
-    _tile_pf_ss = game_data.get('pf_server_seed', '')
-    _tile_pf_url = (f"{_pf_base}/tower_verify?ss={_tile_pf_ss}&cs={game_data.get('pf_client_seed','')}&n={game_data.get('pf_nonce','')}&mode={game_data.get('difficulty','medium')}"
-                    if (_tile_pf_ss and _pf_base) else "")
-
     if not result.get('success'):
         # Snake — game over
         game_data['status'] = 'lost'
@@ -25497,7 +25789,7 @@ async def handle_tower_tile_click(query, context: ContextTypes.DEFAULT_TYPE) -> 
         save_data_critical()
         result_text = f"💀 You found the bomb and lost."
         # Show full revealed board then game-over message
-        await show_tower_grid_final(query, context, tower_game, user_currency, result_text, won=False, pf_url=_tile_pf_url)
+        await show_tower_grid_final(query, context, tower_game, user_currency, result_text, won=False)
     elif result.get('won'):
         # Reached the top — banana!
         winnings = tower_game.current_payout()
@@ -25510,14 +25802,14 @@ async def handle_tower_tile_click(query, context: ContextTypes.DEFAULT_TYPE) -> 
         save_data_critical()
         await announce_win_to_channel(context, _tw_username, winnings, "Tower", multiplier=multiplier, bet=game_data['bet_amount'], user_id=user_id)
         result_text = f"🍌 You climbed to the top and won {format_balance_in_currency(winnings, user_currency)}!"
-        await show_tower_grid_final(query, context, tower_game, user_currency, result_text, won=True, pf_url=_tile_pf_url)
+        await show_tower_grid_final(query, context, tower_game, user_currency, result_text, won=True)
     else:
         # Safe — continue climbing
         save_data()
         await show_tower_grid(query, context)
 
 
-async def show_tower_grid_final(query, context, tower_game, user_currency: str, result_text: str, won: bool, pf_url: str = "") -> None:
+async def show_tower_grid_final(query, context, tower_game, user_currency: str, result_text: str, won: bool) -> None:
     """Show fully-revealed board after game ends — compact design."""
     cols = tower_game.num_cols()
     balance = get_user_balance(str(tower_game.user_id))
@@ -26576,15 +26868,8 @@ async def handle_limbo_multiplier(update: Update, context: ContextTypes.DEFAULT_
 
     track_wagering(user_id, bet_amount, target_multiplier)
 
-    # ── Provably Fair RNG — 65% house win ────────────────────────────────────
-    pf_server_seed = secrets.token_hex(32)
-    pf_client_seed = f"{user_id}_{random.randint(1000, 9999)}"
-    pf_nonce       = random.randint(1, 1000)
-    pf_hash        = hashlib.sha256(f"{pf_server_seed}:{pf_client_seed}:{pf_nonce}".encode()).hexdigest()
-    pf_hash_int    = int(pf_hash[:8], 16)
-    r              = (pf_hash_int % 1000000) / 1000000.0
-
-    # Provably fair crash formula — same as limbo_command handler.
+    # Regular random crash draw, matching the command-based Limbo game.
+    r = random.random()
     crash_point = max(1.01, 0.99 / max(0.000001, 1.0 - r))
     if crash_point > 1000:
         crash_point = 1000.0
@@ -26616,9 +26901,6 @@ async def handle_limbo_multiplier(update: Update, context: ContextTypes.DEFAULT_
     bal_d   = format_balance_in_currency(new_balance, user_currency)
     tgt_str = f"{int(target_multiplier)}x" if target_multiplier == int(target_multiplier) else f"{target_multiplier:.2f}x"
     cp_str  = f"{crash_point:.2f}x"
-    pf_url  = (f"{_pf_base}/limbo_verify?ss={pf_server_seed}&cs={pf_client_seed}&n={pf_nonce}&h={pf_hash}&t={target_multiplier}"
-               if _pf_base else "")
-
     # ── Fetch profile photo ───────────────────────────────────────────────────
     avatar_bytes = None
     try:
@@ -26630,15 +26912,13 @@ async def handle_limbo_multiplier(update: Update, context: ContextTypes.DEFAULT_
         pass
 
     # ── Result message — clean Telegram format ───────────────────────────────
-    _pf_link2  = f' — <a href="{pf_url}">provably fair</a>' if pf_url else ""
     _outcome2  = "✅" if won else "❌"
     caption = (
-        f'Limbo{_pf_link2}\n\n'
+        f'Limbo\n\n'
         f'💵 {bet_d} → <b>{win_d}</b> ({tgt_str})\n\n'
         f'Multiplier: <b>{crash_point:.2f}x</b> {_outcome2}'
     )
-    _limbo2_pf_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔐 Provably Fair", url=pf_url)]]) if pf_url else None
-    await update.message.reply_text(caption, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=_limbo2_pf_kb)
+    await update.message.reply_text(caption, parse_mode=ParseMode.HTML)
 
 # ── Telegram Stars deposit ────────────────────────────────────────────────────
 # These are the Star amounts shown in the supplied Telegram checkout examples.
@@ -31235,39 +31515,6 @@ async def handle_admin_addbal_type(update: Update, context: ContextTypes.DEFAULT
             pass
 
 
-async def fairness_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Explain the provably fair system and how to verify game outcomes."""
-    if not update.message:
-        return
-    text = (
-        "🔐 <b>Provably Fair System — Rollers Casino</b>\n\n"
-        "Every game outcome is generated using a cryptographic algorithm that "
-        "you can independently verify. Here's how it works:\n\n"
-        "<b>How seeds work:</b>\n"
-        "• <b>Server Seed</b> — a secret random string generated by the server before each game\n"
-        "• <b>Client Seed</b> — derived from your Telegram ID + a random nonce\n"
-        "• <b>Nonce</b> — an incrementing counter unique to each bet\n"
-        "• <b>Hashed Server Seed</b> — SHA-256 of the server seed, shown to you before the game\n\n"
-        "<b>Outcome formula (Limbo, Dice, Coinflip):</b>\n"
-        "<code>combined = server_seed:client_seed:nonce</code>\n"
-        "<code>hash = SHA-512(combined)</code>\n"
-        "<code>result = (int(hash[:8], 16) % 10000) / 100</code>\n\n"
-        "<b>To verify a Limbo result:</b>\n"
-        "Tap the 🔍 verify link shown in your game result — it opens a full breakdown "
-        "with your seeds, nonce, and hash so you can reproduce the exact multiplier.\n\n"
-        "<b>Games with full provably fair:</b>\n"
-        "✅ Limbo — full seed + nonce + hash link\n"
-        "✅ Mines — seed-based mine placement\n"
-        "✅ Tower — seeded snake placement\n"
-        "✅ Coinflip — SHA-256 hash determines outcome\n"
-        "✅ Hi-Lo — hash-seeded card draws each step\n"
-        "✅ Blackjack — hash-seeded deck shuffle\n\n"
-        "We never manipulate outcomes. The hash is committed <i>before</i> you bet — "
-        "so we cannot change the result after you place your wager."
-    )
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
-
-
 async def deductbal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Deduct balance from a user. Usage: /deductbal [user_id] [amount]"""
     if not update.message or not update.message.from_user:
@@ -31350,36 +31597,6 @@ async def fixdeposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
     except Exception as e:
         await update.message.reply_text(f"Error: {e}")
-
-async def seed_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send the player a personal link to the Provably Fair hub where they can change their seed."""
-    if not update.message or not update.message.from_user:
-        return
-    user_id = str(update.message.from_user.id)
-    base = _pf_base or 'https://rollerscasino.duckdns.org'
-    fair_url = f"{base}/fair/{user_id}"
-    current = user_client_seeds.get(user_id, '')
-    seed_display = f"<code>{current}</code>" if current else "<i>auto-generated per game</i>"
-    msg = (
-        f"🔐 <b>Provably Fair</b>\n\n"
-        f"Every game result at Rollers Casino is cryptographically verifiable.\n\n"
-        f"<b>Your client seed:</b> {seed_display}\n\n"
-        f"Tap the button below to:\n"
-        f"• Set a custom client seed\n"
-        f"• Verify any past game result\n"
-        f"• Learn how the RNG works"
-    )
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔐 Provably Fair Hub", url=fair_url)],
-        [InlineKeyboardButton("✈️ Limbo Verify", url=f"{base}/limbo_verify"),
-         InlineKeyboardButton("💎 Mines Verify", url=f"{base}/mines_verify")],
-        [InlineKeyboardButton("🐒 Tower Verify", url=f"{base}/tower_verify"),
-         InlineKeyboardButton("🪙 Coinflip Verify", url=f"{base}/cf_verify")],
-        [InlineKeyboardButton("🃏 Blackjack Verify", url=f"{base}/bj_verify"),
-         InlineKeyboardButton("🎴 HiLo Verify", url=f"{base}/hilo_verify")],
-    ])
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=keyboard, disable_web_page_preview=True)
-
 
 async def sendhash_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Owner command: send a TX hash + explorer link to a user after manual withdrawal.
@@ -33847,6 +34064,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await _se_send_game_screen(update.message, user_id, bet_usd)
             return
 
+        # Pump accepts a custom real-money bet from the bet picker.
+        if state == "pump_waiting_bet":
+            bet_usd, error = _pump_parse_bet(text, user_id)
+            if error:
+                await update.message.reply_text(error, parse_mode=ParseMode.HTML)
+                return
+            user_states.pop(user_id, None)
+            await _pump_send_setup_message(update.message, context, user_id, bet_usd)
+            return
+
         # Owner broadcast content collection
         if state == UserState.WAITING_BROADCAST_CONTENT:
             await handle_broadcast_content(update, context)
@@ -35206,6 +35433,7 @@ async def set_commands(app):
         BotCommand("67",           "🎰 SixSeven — pick 67/68/69"),
         BotCommand("mines",        "💣 Minesweeper"),
         BotCommand("keno",         "🎯 Keno"),
+        BotCommand("pump",         "🎈 Pump balloon game"),
         BotCommand("tower",        "🗼 Tower climb"),
         BotCommand("se",           "🎰 Slot Emoji"),
         BotCommand("slotmachine",  "🎰 Slot Emoji"),
@@ -35584,13 +35812,6 @@ async def handle_roulette_callbacks(update: Update, context: ContextTypes.DEFAUL
                 message_thread_id=thread_id,
                 parse_mode=ParseMode.HTML
             )
-
-    # ── Verify ────────────────────────────────────────────────────────────────
-    elif data == "roulette_verify":
-        try:
-            await query.answer("✅ Game is provably fair. Results are randomly generated server-side.", show_alert=True)
-        except Exception:
-            pass
 
 def generate_rupee_coin_frames(result: str, size: int = 220) -> list:
     """Generate physics-based coin flip animation with Rollers badge on landing."""
@@ -36657,7 +36878,7 @@ def _bj_buttons(user_id, can_double=True, can_split=False):
         rows.append(extras)
     return InlineKeyboardMarkup(rows)
 
-def _bj_postgame_buttons(user_id, pf_url=""):
+def _bj_postgame_buttons(user_id):
     """Post-game buttons: Play Again + bet size options."""
     REPLAY_EMOJI = "6310031755030045781"  # circular arrows = replay/new game
     DOUBLE_EMOJI = "6309707678272724983"  # ×2 = double bet
@@ -36671,8 +36892,6 @@ def _bj_postgame_buttons(user_id, pf_url=""):
         ],
         [primary_btn("📝 Change bet", callback_data=f"bj_changbet_{user_id}")],
     ]
-    if pf_url:
-        rows.append([InlineKeyboardButton("🔍 Verify deck", url=pf_url)])
     return InlineKeyboardMarkup(rows)
 
 async def blackjack_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -36754,15 +36973,8 @@ async def blackjack_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     track_wagering(user_id, bet_amount, 2.5)
     track_bet(user_id, bet_amount)
 
-    # Build deck — provably fair seeded shuffle
-    import secrets as _bj_sec, hashlib as _bj_hm
-    _bj_ss    = _bj_sec.token_hex(32)
-    _bj_nonce = random.randint(100000, 999999)
-    _bj_cs    = f"{user_id}_{_bj_nonce}"
-    _bj_hash  = _bj_hm.sha256(f"{_bj_ss}:{_bj_cs}:{_bj_nonce}".encode()).hexdigest()
-    _bj_rng   = random.Random(_bj_hash)
     deck      = [(r, s) for r in _BJ_RANKS for s in _BJ_SUITS]
-    _bj_rng.shuffle(deck)
+    random.shuffle(deck)
     player_hand = [deck.pop(), deck.pop()]
     dealer_hand = [deck.pop(), deck.pop()]
 
@@ -36822,10 +37034,6 @@ async def blackjack_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         'chat_id':        update.message.chat_id,
         'msg_id':         None,
         'doubled':        False,
-        'pf_server_seed': _bj_ss,
-        'pf_client_seed': _bj_cs,
-        'pf_nonce':       _bj_nonce,
-        'pf_hash':        _bj_hash,
     }
 
     markup = _bj_buttons(user_id, can_double=True)
@@ -37033,15 +37241,6 @@ async def bj_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             game_settled = True
             _bj_last_bets[user_id] = bet_amount
 
-            # Build PF verify link from stored seeds
-            _bj_pf_ss  = game.get('pf_server_seed', '')
-            _bj_pf_cs  = game.get('pf_client_seed', '')
-            _bj_pf_n   = game.get('pf_nonce', '')
-            _bj_pf_h   = game.get('pf_hash', '')
-            _bj_pf_url = (f"{_pf_base}/bj_verify?ss={_bj_pf_ss}&cs={_bj_pf_cs}&n={_bj_pf_n}&h={_bj_pf_h}"
-                          if (_bj_pf_ss and _pf_base) else "")
-            _bj_pf_line = f'\n<a href="{_bj_pf_url}">🔍 Verify deck</a>' if _bj_pf_url else ""
-
             if d_val > 21 or p_val > d_val:
                 status   = 'win'
                 winnings = round(bet_amount * 2.0, 2)
@@ -37054,7 +37253,7 @@ async def bj_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await announce_win_to_channel(context, username, winnings, "Blackjack", user_id=user_id)
 
                 bal_display = format_balance_in_currency(get_user_balance(user_id), user_currency)
-                result_line = f"🎉 You won {format_balance_in_currency(winnings, user_currency)}{_bj_pf_line}"
+                result_line = f"🎉 You won {format_balance_in_currency(winnings, user_currency)}"
             elif p_val == d_val:
                 # Tie — push: player gets bet back
                 status = 'tie'
@@ -37062,7 +37261,7 @@ async def bj_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 add_match_history(user_id, 'blackjack', bet_amount, 'push', bet_amount)
                 save_data_critical()
                 bal_display = format_balance_in_currency(get_user_balance(user_id), user_currency)
-                result_line = f"🤝 <b>Push</b> — bet returned (both {p_val}){_bj_pf_line}"
+                result_line = f"🤝 <b>Push</b> — bet returned (both {p_val})"
             else:
                 status = 'lose'
                 add_house_balance(bet_amount)
@@ -37070,16 +37269,16 @@ async def bj_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 add_match_history(user_id, 'blackjack', bet_amount, 'loss', 0)
                 save_data_critical()
                 bal_display = format_balance_in_currency(get_user_balance(user_id), user_currency)
-                result_line = f"❌ <b>Dealer wins</b>{_bj_pf_line}"
+                result_line = f"❌ <b>Dealer wins</b>"
 
             track_wagering(user_id, bet_amount, 2.5)
             save_data_critical()
             img = _bj_make_image(username, player_hand, dealer_hand, bet_display, bal_display, status)
             if img and game.get('is_photo'):
-                await query.edit_message_media(media=InputMediaPhoto(img), reply_markup=_bj_postgame_buttons(user_id, pf_url=_bj_pf_url))
+                await query.edit_message_media(media=InputMediaPhoto(img), reply_markup=_bj_postgame_buttons(user_id))
             else:
                 text = _bj_render(username, player_hand, dealer_hand, bet_display, bal_display, status, result_line)
-                await _bj_safe_edit(query, text, parse_mode=ParseMode.HTML, reply_markup=_bj_postgame_buttons(user_id, pf_url=_bj_pf_url), disable_web_page_preview=True)
+                await _bj_safe_edit(query, text, parse_mode=ParseMode.HTML, reply_markup=_bj_postgame_buttons(user_id), disable_web_page_preview=True)
             if status in ('win', 'blackjack'):
                 await _send_player_win_sticker(context.bot, query.message.chat_id)
 
@@ -37208,15 +37407,8 @@ async def bj_restart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     username = query.from_user.username or query.from_user.first_name or "Player"
     _av      = await _fetch_avatar_bytes(context.bot, user_id)
 
-    # Provably fair seeds for restart hand
-    import secrets as _bjr_sec, hashlib as _bjr_hm
-    _bjr_ss    = _bjr_sec.token_hex(32)
-    _bjr_nonce = random.randint(100000, 999999)
-    _bjr_cs    = f"{user_id}_{_bjr_nonce}"
-    _bjr_hash  = _bjr_hm.sha256(f"{_bjr_ss}:{_bjr_cs}:{_bjr_nonce}".encode()).hexdigest()
-    _bjr_rng   = random.Random(_bjr_hash)
     deck        = [(r, s) for r in _BJ_RANKS for s in _BJ_SUITS]
-    _bjr_rng.shuffle(deck)
+    random.shuffle(deck)
     player_hand = [deck.pop(), deck.pop()]
     dealer_hand = [deck.pop(), deck.pop()]
 
@@ -37276,10 +37468,6 @@ async def bj_restart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         'msg_id':         query.message.message_id,
         'doubled':        False,
         'is_photo':       True,
-        'pf_server_seed': _bjr_ss,
-        'pf_client_seed': _bjr_cs,
-        'pf_nonce':       _bjr_nonce,
-        'pf_hash':        _bjr_hash,
     }
 
     markup = _bj_buttons(user_id, can_double=True)
@@ -37332,14 +37520,8 @@ async def bj_quickbet_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     track_wagering(user_id, bet_amount, 2.5)
     track_bet(user_id, bet_amount)
 
-    import secrets as _bjq_sec, hashlib as _bjq_hm
-    _bjq_ss    = _bjq_sec.token_hex(32)
-    _bjq_nonce = random.randint(100000, 999999)
-    _bjq_cs    = f"{user_id}_{_bjq_nonce}"
-    _bjq_hash  = _bjq_hm.sha256(f"{_bjq_ss}:{_bjq_cs}:{_bjq_nonce}".encode()).hexdigest()
-    _bjq_rng   = random.Random(_bjq_hash)
     deck       = [(r, s) for r in _BJ_RANKS for s in _BJ_SUITS]
-    _bjq_rng.shuffle(deck)
+    random.shuffle(deck)
     player_hand = [deck.pop(), deck.pop()]
     dealer_hand = [deck.pop(), deck.pop()]
 
@@ -37400,10 +37582,6 @@ async def bj_quickbet_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         'msg_id':         query.message.message_id,
         'doubled':        False,
         'is_photo':       True,
-        'pf_server_seed': _bjq_ss,
-        'pf_client_seed': _bjq_cs,
-        'pf_nonce':       _bjq_nonce,
-        'pf_hash':        _bjq_hash,
     }
 
     markup = _bj_buttons(user_id, can_double=True)
@@ -37801,7 +37979,7 @@ async def crash_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         f"💰 Balance: <b>{format_balance_in_currency(balance, user_currency)}</b>\n"
         f"📊 Recent crashes: <code>{hist_str}</code>\n\n"
         "The multiplier climbs from 1.00× — cash out before it crashes!\n"
-        "💸 Every round is provably fair.\n\n"
+        "💸 Every round is randomly generated.\n\n"
         "🎮 <b>Tap below to open the game:</b>"
     )
 
@@ -38299,16 +38477,9 @@ async def hilo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         
         track_wagering(user_id, bet, 2.0)
         
-        # Generate first card — provably fair using SHA-256
-        import secrets as _hl_sec, hashlib as _hl_hash_mod
         ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
         suits = ['♠', '♥', '♦', '♣']
-        _hl_ss    = _hl_sec.token_hex(32)
-        _hl_nonce = random.randint(100000, 999999)
-        _hl_cs    = f"{user_id}_{_hl_nonce}"
-        _hl_h0    = _hl_hash_mod.sha256(f"{_hl_ss}:{_hl_cs}:0".encode()).hexdigest()
-        _hl_int0  = int(_hl_h0[:8], 16)
-        card      = (ranks[_hl_int0 % 13], suits[(_hl_int0 >> 4) % 4])
+        card      = (random.choice(ranks), random.choice(suits))
 
         # Define rank values for probability calculation
         rank_vals = {r: i+1 for i, r in enumerate(ranks)}
@@ -38320,9 +38491,6 @@ async def hilo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             'multiplier': 1.0,
             'level': 0,
             'currency': user_currency,
-            'pf_server_seed': _hl_ss,
-            'pf_client_seed': _hl_cs,
-            'pf_nonce': _hl_nonce,
         }
         
         # Send card with buttons
@@ -38393,17 +38561,7 @@ async def hilo_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     
     rank_vals = {r: i+1 for i, r in enumerate(ranks)}
     current_val = rank_vals[game['card'][0]]
-    # Provably fair card draw: hash(server_seed:client_seed:step)
-    import hashlib as _hl_hash_mod2
-    _hl_step  = game['level'] + 1
-    _hl_ss    = game.get('pf_server_seed', '')
-    _hl_cs    = game.get('pf_client_seed', '')
-    if _hl_ss:
-        _hl_h = _hl_hash_mod2.sha256(f"{_hl_ss}:{_hl_cs}:{_hl_step}".encode()).hexdigest()
-        _hl_i = int(_hl_h[:8], 16)
-        new_card = (ranks[_hl_i % 13], suit_list[(_hl_i >> 4) % 4])
-    else:
-        new_card = (random.choice(ranks), random.choice(suit_list))
+    new_card = (random.choice(ranks), random.choice(suit_list))
     new_val = rank_vals[new_card[0]]
     
     # Calculate probabilities and multipliers
@@ -38477,11 +38635,6 @@ async def hilo_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     
     if correct is None:  # Cashout
         winnings = round(bet * game['multiplier'], 2)
-        _hl_pf_ss  = game.get('pf_server_seed', '')
-        _hl_pf_cs  = game.get('pf_client_seed', '')
-        _hl_pf_n   = game.get('pf_nonce', '')
-        _hl_pf_url = (f"{_pf_base}/hilo_verify?ss={_hl_pf_ss}&cs={_hl_pf_cs}&n={_hl_pf_n}&steps={game['level']}"
-                      if (_hl_pf_ss and _pf_base) else "")
         # ANTI-EXPLOIT: atomic pop — a concurrent double-tap finds no game and exits cleanly.
         # A bare 'del' would KeyError on the second tap rather than guarding safely.
         _hl_claimed = hilo_games.pop(user_id, None)
@@ -38501,15 +38654,12 @@ async def hilo_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await query.answer()
         except Exception:
             pass
-        _pf_line = f'\n<a href="{_hl_pf_url}">🔍 Verify result</a>' if _hl_pf_url else ""
         caption = (
             f"✅ <b>CASHED OUT!</b>\n\n"
             f"Won: <b>{format_balance_in_currency(winnings, user_currency)}</b> ({game['multiplier']:.2f}x)\n"
             f"Balance: <b>{format_balance_in_currency(get_user_balance(user_id), user_currency)}</b>"
-            f"{_pf_line}"
         )
-        _hl_co_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔐 Provably Fair", url=_hl_pf_url)]]) if _hl_pf_url else None
-        await query.edit_message_caption(caption=caption, parse_mode=ParseMode.HTML, reply_markup=_hl_co_kb)
+        await query.edit_message_caption(caption=caption, parse_mode=ParseMode.HTML)
         await _send_player_win_sticker(context.bot, query.message.chat_id)
         return
     
@@ -38551,11 +38701,6 @@ async def hilo_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         save_data_critical()
     else:  # Lost
-        _hl_pf_ss_l  = game.get('pf_server_seed', '')
-        _hl_pf_cs_l  = game.get('pf_client_seed', '')
-        _hl_pf_n_l   = game.get('pf_nonce', '')
-        _hl_pf_url_l = (f"{_pf_base}/hilo_verify?ss={_hl_pf_ss_l}&cs={_hl_pf_cs_l}&n={_hl_pf_n_l}&steps={game['level']+1}"
-                        if (_hl_pf_ss_l and _pf_base) else "")
         # ANTI-EXPLOIT: atomic pop on loss path — clean guard, no bare KeyError
         if hilo_games.pop(user_id, None) is None:
             return
@@ -38567,16 +38712,13 @@ async def hilo_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # Determine if new card was higher or lower
         was_higher = new_val > current_val
         direction = "HIGHER" if was_higher else "LOWER"
-        _pf_line_l = f'\n<a href="{_hl_pf_url_l}">🔍 Verify result</a>' if _hl_pf_url_l else ""
         caption = (
             f"{_GAME_OVER_EMOJI} <b>GAME OVER!</b> Level <b>{game['level']}</b>\n\n"
             f"Card: <b>{new_card[0]}{new_card[1]}</b> — <b>{direction}</b>\n"
             f"Lost: <b>{format_balance_in_currency(bet, user_currency)}</b>\n"
             f"Balance: <b>{format_balance_in_currency(get_user_balance(user_id), user_currency)}</b>"
-            f"{_pf_line_l}"
         )
-        _hl_loss_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔐 Provably Fair", url=_hl_pf_url_l)]]) if _hl_pf_url_l else None
-        await query.edit_message_caption(caption=caption, parse_mode=ParseMode.HTML, reply_markup=_hl_loss_kb)
+        await query.edit_message_caption(caption=caption, parse_mode=ParseMode.HTML)
 
     try:
         await query.answer()
@@ -40013,9 +40155,6 @@ app.add_url_rule('/plisio/webhook',       'plisio_wh_public', _handle_plisio_web
 # ── Mirror provably-fair verify pages onto the public app (port 5000) ─────────
 # The first Flask instance (port 7777) has these routes but Replit only exposes
 # port 5000 publicly — so players tapping "provably fair" links get a real page.
-app.add_url_rule('/limbo_verify', 'limbo_verify_pub', ipn_limbo_verify)
-app.add_url_rule('/mines_verify', 'mines_verify_pub', ipn_mines_verify)
-app.add_url_rule('/tower_verify', 'tower_verify_pub', ipn_tower_verify)
 
 # Game state storage
 chicken_game_states = {}  # {user_id: game_state}
@@ -40438,7 +40577,6 @@ def _crossyroad_car6():
     return _sfd(PROJECT_ROOT, 'Car6.png')
 
 
-@app.route('/cf_verify')
 def cf_verify():
     ss = request.args.get('ss', '')
     cs = request.args.get('cs', '')
@@ -40475,7 +40613,6 @@ print(f"Player wins: {{not house_wins}}")
 </body></html>"""
     return html, 200, {'Content-Type': 'text/html'}
 
-@app.route('/hilo_verify')
 def hilo_verify():
     ss    = request.args.get('ss', '')
     cs    = request.args.get('cs', '')
@@ -40511,7 +40648,6 @@ for step in range({steps}):
 </body></html>"""
     return html, 200, {'Content-Type': 'text/html'}
 
-@app.route('/bj_verify')
 def bj_verify():
     ss = request.args.get('ss', '')
     cs = request.args.get('cs', '')
@@ -40550,7 +40686,6 @@ print("Full deck order:", deck)
 </body></html>"""
     return html, 200, {'Content-Type': 'text/html'}
 
-@app.route('/fair/<user_id>', methods=['GET'])
 def fair_page(user_id):
     """Unified Provably Fair hub — shows seed changer + per-game verify links."""
     current_seed = user_client_seeds.get(str(user_id), '')
@@ -40686,7 +40821,6 @@ footer{{text-align:center;color:#8b949e;font-size:0.75rem;padding:24px 16px;bord
     return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
 
-@app.route('/api/seed/<user_id>', methods=['POST'])
 def api_seed_set(user_id):
     """Update a player's preferred client seed."""
     base = _pf_base or 'https://rollerscasino.duckdns.org'
@@ -40703,7 +40837,6 @@ def api_seed_set(user_id):
     return redirect(f'{base}/fair/{user_id}?saved=1')
 
 
-@app.route('/api/seed/<user_id>', methods=['GET'])
 def api_seed_get(user_id):
     """Return player's current client seed as JSON."""
     import json as _json
@@ -40999,7 +41132,6 @@ def main():
     application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(CommandHandler("promo", promo_command))
     application.add_handler(CommandHandler("setbal", setbal_command))
-    application.add_handler(CommandHandler("fairness", fairness_command))
     application.add_handler(CommandHandler("sethousebal", sethousebal_command))
     application.add_handler(CallbackQueryHandler(handle_admin_addbal_type, pattern="^adminbal_"))
     application.add_handler(CommandHandler("panel", panel_command))
@@ -41047,6 +41179,7 @@ def main():
     application.add_handler(CommandHandler("clearkeyboard", clear_keyboard_command))
     application.add_handler(CommandHandler("joincode", joincode_command))
     application.add_handler(CommandHandler("games", games_command))
+    application.add_handler(CommandHandler("game", games_command))
     application.add_handler(CommandHandler("webgames", webgames_command))
     application.add_handler(CallbackQueryHandler(handle_game_callbacks, pattern="^(play_|back_to_lobby|view_raffle|play_rroulette)"))
     application.add_handler(CommandHandler("keno", keno_game.keno_command))
@@ -41062,8 +41195,6 @@ def main():
     application.add_handler(CommandHandler("addbal", addbal_command))
     application.add_handler(CommandHandler("deductbal", deductbal_command))
     application.add_handler(CommandHandler("fixdeposit", fixdeposit_command))
-    application.add_handler(CommandHandler("seed", seed_command))
-    application.add_handler(CommandHandler("fair", seed_command))
     application.add_handler(CommandHandler("botdepo", botdepo_command))
     application.add_handler(CommandHandler("fixwithdrawal", fixwithdrawal_command))
     application.add_handler(CommandHandler("refundwithdrawal", refundwithdrawal_command))
@@ -41161,6 +41292,7 @@ def main():
     application.add_handler(CommandHandler("limbo", limbo_command))
     application.add_handler(CommandHandler("mines", mines_command))
     application.add_handler(CommandHandler("tower", tower_command))
+    application.add_handler(CommandHandler("pump", pump_command))
     
     application.add_handler(CommandHandler("hilo", hilo_command))
     application.add_handler(CommandHandler(["blackjack", "bj"], blackjack_command))
@@ -41200,6 +41332,7 @@ def main():
     # Register this after lvl_nav_ so it doesn't intercept it
     application.add_handler(CallbackQueryHandler(handle_mines_action, pattern="^mines_"))
     application.add_handler(CallbackQueryHandler(handle_tower_action, pattern="^tower_"))
+    application.add_handler(CallbackQueryHandler(pump_callback, pattern="^pump_"))
     application.add_handler(CallbackQueryHandler(handle_diamonds_action, pattern="^diamonds_"))
     application.add_handler(CallbackQueryHandler(handle_callback, pattern="^np_withdraw_")) # Handle withdrawal coin selection
     
@@ -41313,6 +41446,7 @@ def main():
         # ── Skill & Arcade Games ──────────────────────────────────────────
         BotCommand("mines",        "💣 Minesweeper"),
         BotCommand("keno",         "🎯 Keno"),
+        BotCommand("pump",         "🎈 Pump balloon game"),
         BotCommand("tower",        "🗼 Tower climb"),
         BotCommand("slots",        "🎰 Slot machine"),
         BotCommand("claw",         "🕹 Claw machine"),
